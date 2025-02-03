@@ -106,6 +106,8 @@ extern int sys_uptime(void);
 extern int sys_gethistory(void);
 extern int sys_block(void);
 extern int sys_unblock(void);
+extern int sys_chmod(void);
+
 
 
 static int (*syscalls[])(void) = {
@@ -133,6 +135,7 @@ static int (*syscalls[])(void) = {
 [SYS_gethistory]    sys_gethistory,
 [SYS_block]    sys_block,
 [SYS_unblock]    sys_unblock,
+[SYS_chmod]   sys_chmod,
 };
 
 void

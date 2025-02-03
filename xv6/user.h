@@ -26,6 +26,8 @@ int uptime(void);
 int gethistory(void);
 int block(int syscall_id);
 int unblock(int syscall_id);
+int chmod(const char *file, int mode);
+
 
 
 
