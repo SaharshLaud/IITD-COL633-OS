@@ -13,6 +13,51 @@
 
 #define MAXARGS 10
 
+// username and password for authentication
+int login()
+{
+  char input[100];
+  int x = 0;
+
+  while(x<3)
+  {
+    // Showing login prompt
+    printf(1, "Enter username: ");
+    gets(input,sizeof(input));
+    input[strlen(input)-1] = '\0';
+
+    // If username correct check for password
+    if(strcmp(input, USERNAME)==0)
+    {
+      printf(1, "Enter password: ");
+      gets(input,sizeof(input));
+      input[strlen(input)-1] = '\0';
+
+
+      // If password also correct then login successful
+      if(strcmp(input,PASSWORD)==0)
+      {
+        printf(1, "Login successful\n");
+        return 1;
+      }
+      else
+      {
+        printf(1, "Incorrect password\n");
+        x++;
+      }
+    }
+    else
+    {
+      printf(1, "Incorrect username\n");
+      x++;
+    }
+  }
+  // If more than 3 failed attempts then exit
+  printf(1, "Maximum attempts exceeded\n");
+  return 0;
+}
+
+
 struct cmd {
   int type;
 };
@@ -146,6 +191,14 @@ main(void)
 {
   static char buf[100];
   int fd;
+  // Calling user authentication function
+  if(login()==0)
+  {
+    while(1) 
+    {
+      sleep(1000);  // Disable the login process        
+    }
+  }  
 
   // Ensure that three file descriptors are open.
   while((fd = open("console", O_RDWR)) >= 0){
