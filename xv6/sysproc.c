@@ -7,6 +7,19 @@
 #include "mmu.h"
 #include "proc.h"
 
+// Function to get history
+int
+sys_gethistory(void)
+{
+  acquire(&history_lock);
+  for(int i = 0; i < history_count; i++){
+    // The format is: "pid command mem_usage"
+    cprintf("%d %s %d\n", proc_history[i].pid, proc_history[i].name, proc_history[i].mem_usage);
+  }
+  release(&history_lock);
+  return 0;
+}
+
 int
 sys_fork(void)
 {

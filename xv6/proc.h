@@ -56,3 +56,19 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+// Defining a global history structure
+#define MAX_HISTORY 64 
+
+struct proc_history {
+  int pid;
+  char name[16];
+  uint mem_usage;    // total memory usage (bytes from text, data, bss, heap, plus stack)
+  uint timestamp;
+};
+
+extern struct spinlock history_lock;
+extern struct proc_history proc_history[MAX_HISTORY];
+extern int history_count;
+extern uint global_timestamp;
+void add_proc_history(struct proc *p);

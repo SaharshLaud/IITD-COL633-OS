@@ -7,6 +7,32 @@
 #include "proc.h"
 #include "spinlock.h"
 
+// Global variables and helper functions for history
+struct spinlock history_lock;
+struct proc_history proc_history[MAX_HISTORY];
+int history_count = 0;
+uint global_timestamp = 0;
+
+void
+add_proc_history(struct proc *p)
+{
+  // Use a lock for concurrency:
+  acquire(&history_lock);
+  if(history_count < MAX_HISTORY){
+    proc_history[history_count].pid = p->pid;
+    // Use safe string copy similar to what xv6 does:
+    safestrcpy(proc_history[history_count].name, p->name, sizeof(proc_history[history_count].name));
+    // Approximate memory usage.
+    // p->sz usually holds the process memory size (heap, text, data, bss)
+    // Add an approximate constant for stack memory (e.g. KSTACKSIZE)
+    proc_history[history_count].mem_usage = p->sz + KSTACKSIZE;
+    // Use a global counter as a timestamp.
+    proc_history[history_count].timestamp = global_timestamp++;
+    history_count++;
+  }
+  release(&history_lock);
+}
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
