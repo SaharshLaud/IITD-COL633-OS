@@ -8,6 +8,7 @@
 #include "spinlock.h"
 
 
+// Global variables and helper functions for history
 struct spinlock history_lock;
 struct proc_history proc_history[MAX_HISTORY];
 int history_count = 0;
