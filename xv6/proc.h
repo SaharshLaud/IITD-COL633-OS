@@ -34,6 +34,10 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#ifndef NSYSCALL
+#define NSYSCALL 25
+#endif
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -49,6 +53,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int blocked[NSYSCALL];       // Array to indicate whether a syscall is blocked.
+  uint text_size;   // Size of text segment
+  uint data_size;   // Size of data + bss segments
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +63,21 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+
+#define MAX_HISTORY 64 
+
+struct proc_history {
+  int pid;
+  char name[16];
+  uint mem_usage;    // total memory usage (bytes from text, data, bss, heap, plus stack)
+  uint timestamp;
+};
+
+// Declare global variables (to be defined later)
+extern struct spinlock history_lock;
+extern struct proc_history proc_history[MAX_HISTORY];
+extern int history_count;
+extern uint global_timestamp;
+void add_proc_history(struct proc *p);
+

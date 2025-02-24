@@ -38,7 +38,7 @@ void wsect(uint, void*);
 void winode(uint, struct dinode*);
 void rinode(uint inum, struct dinode *ip);
 void rsect(uint sec, void *buf);
-uint ialloc(ushort type);
+uint ialloc(ushort type, uint mode);
 void iappend(uint inum, void *p, int n);
 
 // convert to intel byte order
@@ -67,12 +67,12 @@ xint(uint x)
 int
 main(int argc, char *argv[])
 {
-  int i, cc, fd;
+  int i, cc, fd, n;
   uint rootino, inum, off;
   struct dirent de;
   char buf[BSIZE];
   struct dinode din;
-
+  char magic[4];  // buffer to check for ELF magic
 
   static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
 
@@ -99,13 +99,13 @@ main(int argc, char *argv[])
   sb.ninodes = xint(NINODES);
   sb.nlog = xint(nlog);
   sb.logstart = xint(2);
-  sb.inodestart = xint(2+nlog);
-  sb.bmapstart = xint(2+nlog+ninodeblocks);
+  sb.inodestart = xint(2 + nlog);
+  sb.bmapstart = xint(2 + nlog + ninodeblocks);
 
   printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
-  freeblock = nmeta;     // the first free block that we can allocate
+  freeblock = nmeta;     // first free block to allocate
 
   for(i = 0; i < FSSIZE; i++)
     wsect(i, zeroes);
@@ -114,7 +114,8 @@ main(int argc, char *argv[])
   memmove(buf, &sb, sizeof(sb));
   wsect(1, buf);
 
-  rootino = ialloc(T_DIR);
+  /* Allocate the root directory with full permissions: mode 7 (rwx) */
+  rootino = ialloc(T_DIR, 7);
   assert(rootino == ROOTINO);
 
   bzero(&de, sizeof(de));
@@ -135,14 +136,28 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-    // Skip leading _ in name when writing to file system.
-    // The binaries are named _rm, _cat, etc. to keep the
-    // build operating system from trying to execute them
-    // in place of system binaries like rm and cat.
+    // Skip leading '_' in name when writing to file system.
     if(argv[i][0] == '_')
       ++argv[i];
 
-    inum = ialloc(T_FILE);
+    /* Determine file mode:
+       Read the first few bytes to check if this is an ELF executable.
+       If it is, assign mode 5 (read & execute; binary 101),
+       otherwise assign mode 6 (read & write; binary 110).  */
+    n = read(fd, magic, sizeof(magic));
+    lseek(fd, 0, 0);  // reset file pointer to start
+
+    uint mode;
+    if(n == sizeof(magic) &&
+       (unsigned char)magic[0] == 0x7f &&
+       magic[1] == 'E' &&
+       magic[2] == 'L' &&
+       magic[3] == 'F')
+      mode = 5;
+    else
+      mode = 6;
+
+    inum = ialloc(T_FILE, mode);
 
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
@@ -155,10 +170,10 @@ main(int argc, char *argv[])
     close(fd);
   }
 
-  // fix size of root inode dir
+  // Fix size of root inode directory
   rinode(rootino, &din);
   off = xint(din.size);
-  off = ((off/BSIZE) + 1) * BSIZE;
+  off = ((off / BSIZE) + 1) * BSIZE;
   din.size = xint(off);
   winode(rootino, &din);
 
@@ -166,6 +181,7 @@ main(int argc, char *argv[])
 
   exit(0);
 }
+
 
 void
 wsect(uint sec, void *buf)
@@ -221,7 +237,7 @@ rsect(uint sec, void *buf)
 }
 
 uint
-ialloc(ushort type)
+ialloc(ushort type, uint mode)
 {
   uint inum = freeinode++;
   struct dinode din;
@@ -230,6 +246,7 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
+  din.mode = mode; // set permission bits 
   winode(inum, &din);
   return inum;
 }

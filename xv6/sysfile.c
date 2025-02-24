@@ -16,6 +16,58 @@
 #include "file.h"
 #include "fcntl.h"
 
+// chmod function
+int sys_chmod(void) {
+  char *path;
+  int mode;
+  struct inode *ip;
+
+  // Get the filename (string) from argument 0.
+  if(argstr(0, &path) < 0)
+      return -1;
+  // Get the mode (integer) from argument 1.
+  if(argint(1, &mode) < 0)
+      return -1;
+  
+  // Validate that the mode is 3 bits (0 to 7)
+  if(mode < 0 || mode > 7)
+      return -1;
+
+  // Begin file system operation
+  begin_op();
+
+  // Find the inode by path.
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);
+
+  // OPTIONAL: Permission check.
+  // In many systems only the owner modifies permissions;
+  // if you have an owner mechanism, check that here.
+
+  // For each permission bit that is missing in 'mode', print a message.
+  // (Bit 0: read, Bit 1: write, Bit 2: execute)
+  if((mode & 0x1) == 0)
+      cprintf("Operation read failed\n");
+  if((mode & 0x2) == 0)
+      cprintf("Operation write failed\n");
+  if((mode & 0x4) == 0)
+      cprintf("Operation execute failed\n");
+
+  // Update the inode’s permission field.
+  // (Assuming you have added an integer field 'mode' in the inode structure.)
+  ip->mode = mode;  
+
+  iupdate(ip);
+  iunlock(ip);
+  end_op();
+  return 0;
+}
+
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int

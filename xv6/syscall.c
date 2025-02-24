@@ -103,6 +103,12 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_gethistory(void);
+extern int sys_block(void);
+extern int sys_unblock(void);
+extern int sys_chmod(void);
+
+
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -126,6 +132,10 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_gethistory]    sys_gethistory,
+[SYS_block]    sys_block,
+[SYS_unblock]    sys_unblock,
+[SYS_chmod]   sys_chmod,
 };
 
 void
@@ -135,7 +145,15 @@ syscall(void)
   struct proc *curproc = myproc();
 
   num = curproc->tf->eax;
-  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+
+  // If the syscall is not fork or exit and it is marked as blocked, intercept it.
+  if(num != SYS_fork && num != SYS_exit && curproc->blocked[num]){
+    cprintf("syscall %d is blocked\n", num);
+    curproc->tf->eax = -1;
+    return;
+  }
+
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]){
     curproc->tf->eax = syscalls[num]();
   } else {
     cprintf("%d %s: unknown sys call %d\n",

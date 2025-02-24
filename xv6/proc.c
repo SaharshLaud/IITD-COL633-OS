@@ -7,6 +7,35 @@
 #include "proc.h"
 #include "spinlock.h"
 
+
+struct spinlock history_lock;
+struct proc_history proc_history[MAX_HISTORY];
+int history_count = 0;
+uint global_timestamp = 0;
+
+void
+add_proc_history(struct proc *p)
+{
+  // Skip init and sh
+  if(strncmp(p->name, "init", 4) == 0 || strncmp(p->name, "sh", 2) == 0) {
+     return;
+  }
+  // Use a lock for concurrency:
+  acquire(&history_lock);
+  if(history_count < MAX_HISTORY){
+    proc_history[history_count].pid = p->pid;
+    // Use safe string copy similar to what xv6 does:
+    safestrcpy(proc_history[history_count].name, p->name, sizeof(proc_history[history_count].name));
+    proc_history[history_count].mem_usage = PGROUNDUP(p->sz) + 2 * PGSIZE;
+    // Use a global counter as a timestamp.
+    proc_history[history_count].timestamp = global_timestamp++;
+    history_count++;
+  }
+  release(&history_lock);
+}
+
+
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];

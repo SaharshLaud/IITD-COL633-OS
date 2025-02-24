@@ -45,6 +45,12 @@ exec(char *path, char **argv)
       goto bad;
     if(ph.type != ELF_PROG_LOAD)
       continue;
+    if(ph.flags & ELF_PROG_FLAG_EXEC) {  // Text segment
+        curproc->text_size = ph.memsz;
+      } 
+    else {                             // Data + BSS
+        curproc->data_size = ph.memsz;
+      }
     if(ph.memsz < ph.filesz)
       goto bad;
     if(ph.vaddr + ph.memsz < ph.vaddr)
@@ -62,11 +68,14 @@ exec(char *path, char **argv)
 
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
+  uint data_end = sz;
   sz = PGROUNDUP(sz);
   if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
     goto bad;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
+  curproc->sz = data_end;
+
 
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
@@ -92,6 +101,9 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
+
+  // Add history record AFTER a successful exec:
+  add_proc_history(curproc); 
 
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
