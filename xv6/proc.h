@@ -35,7 +35,7 @@ struct context {
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 #ifndef NSYSCALL
-#define NSYSCALL 25
+#define NSYSCALL 30
 #endif
 
 // Per-process state

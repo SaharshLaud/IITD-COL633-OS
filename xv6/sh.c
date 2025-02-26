@@ -219,17 +219,10 @@ main(void)
     }
 
     // Check for the "history" command
-<<<<<<< HEAD
-    if(strcmp(buf, "history\n") == 0) {
-      gethistory();   // Call gethistory to print history
-      continue;
-    }
-=======
       if(strcmp(buf, "history\n") == 0) {
           gethistory();   // Call gethistory to print history
           continue;
         }
->>>>>>> 7547611f92863ce746e6740181fcb377c1495b73
 
     if(fork1() == 0)
       runcmd(parsecmd(buf));
