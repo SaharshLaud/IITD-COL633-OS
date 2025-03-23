@@ -69,6 +69,27 @@ void send_sigfg(void) {
   release(&ptable.lock);
 }
 
+// Send SIGCUSTOM to process with pid > 2
+void send_sigcustom(void) {
+  struct proc *p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != UNUSED && p->pid > 2){
+          // If the process has registered a handler, mark the signal as pending
+          if(p->sig_handler != 0) {
+              p->custom_signal_pending = 1;
+              if(p->state == SLEEPING)
+                  p->state = RUNNABLE;
+          }
+          // If no handler is registered, ignore the signal
+      }
+  }
+  release(&ptable.lock);
+}
+
+
+
+
 void
 pinit(void)
 {
@@ -138,6 +159,8 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
   p->suspended = 0;  // Initialize suspended field
+  p->sig_handler = 0;
+  p->custom_signal_pending = 0;
 
 
   release(&ptable.lock);

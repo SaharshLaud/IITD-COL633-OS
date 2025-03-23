@@ -123,7 +123,7 @@ void            yield(void);
 void            send_sigint(void);
 void            send_sigbg(void);
 void            send_sigfg(void);
-
+void            send_sigcustom(void);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

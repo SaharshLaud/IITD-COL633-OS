@@ -6,6 +6,17 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+int
+sys_signal(void)
+{
+  sighandler_t handler;
+  
+  if(argptr(0, (char**)&handler, sizeof(handler)) < 0)
+    return -1;
+  
+  myproc()->sig_handler = handler;
+  return 0;
+}
 
 int
 sys_fork(void)

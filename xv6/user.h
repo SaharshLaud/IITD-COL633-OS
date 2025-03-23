@@ -37,3 +37,6 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+
+typedef void (*sighandler_t)(void);
+int signal(sighandler_t);

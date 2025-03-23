@@ -195,6 +195,7 @@ consoleintr(int (*getc)(void))
   int ctrl_c_pressed = 0;
   int ctrl_b_pressed = 0;
   int ctrl_f_pressed = 0;
+  int ctrl_g_pressed = 0;
 
 
   acquire(&cons.lock);
@@ -232,6 +233,11 @@ consoleintr(int (*getc)(void))
         ctrl_f_pressed = 1;
         send_sigfg();
         break;
+
+    case C('G'): // Detect Ctrl+G
+      ctrl_g_pressed = 1;
+      send_sigcustom();
+      break;
       
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
@@ -261,6 +267,10 @@ consoleintr(int (*getc)(void))
 
   if(ctrl_f_pressed) {
       cprintf("Ctrl-F is detected by xv6\n");
+  }
+
+  if(ctrl_g_pressed) {
+    cprintf("Ctrl-G is detected by xv6\n");
   }
 }
 

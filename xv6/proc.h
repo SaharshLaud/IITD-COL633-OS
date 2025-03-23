@@ -33,6 +33,7 @@ struct context {
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+typedef void (*sighandler_t)(void);
 
 // Per-process state
 struct proc {
@@ -50,6 +51,10 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int suspended;             // Flag to indicate if process is suspended (for SIGBG)
+  sighandler_t sig_handler;       // Custom signal handler function pointer
+  int custom_signal_pending;      // Flag to indicate a pending custom signal
+
+  
 
 };
 
