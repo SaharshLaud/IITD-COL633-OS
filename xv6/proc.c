@@ -6,6 +6,8 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#define INITIAL_PRIORITY 100
+extern uint ticks;
 
 struct {
   struct spinlock lock;
@@ -161,6 +163,16 @@ found:
   p->suspended = 0;  // Initialize suspended field
   p->sig_handler = 0;
   p->custom_signal_pending = 0;
+  //scheduling
+  p->start_later = 0;
+  p->exec_time = -1;
+  p->create_ticks = ticks;
+  p->start_ticks = 0;
+  p->total_run_ticks = 0;
+  p->wait_ticks = 0;
+  p->context_switches = 0;
+  p->initial_priority = INITIAL_PRIORITY;
+  p->priority = INITIAL_PRIORITY;
 
 
   release(&ptable.lock);
@@ -300,6 +312,7 @@ fork(void)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
+// Modify the exit function to print profiling information
 void
 exit(void)
 {
@@ -310,7 +323,7 @@ exit(void)
   if(curproc == initproc)
     panic("init exiting");
 
-  // Close all open files.
+  // Close all open files
   for(fd = 0; fd < NOFILE; fd++){
     if(curproc->ofile[fd]){
       fileclose(curproc->ofile[fd]);
@@ -323,12 +336,24 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
+  // Print scheduler profiling metrics
+  uint end_ticks = ticks;
+  uint tat = end_ticks - curproc->create_ticks;  // Turnaround time
+  uint wt = tat - curproc->total_run_ticks;  // Waiting time
+  uint rt = curproc->start_ticks - curproc->create_ticks;  // Response time
+
+  cprintf("PID: %d\n", curproc->pid);
+  cprintf("TAT: %d\n", tat);
+  cprintf("WT: %d\n", wt);
+  cprintf("RT: %d\n", rt);
+  cprintf("#CS: %d\n", curproc->context_switches);
+
   acquire(&ptable.lock);
 
-  // Parent might be sleeping in wait().
+  // Parent might be sleeping in wait()
   wakeup1(curproc->parent);
 
-  // Pass abandoned children to init.
+  // Pass abandoned children to init
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->parent == curproc){
       p->parent = initproc;
@@ -337,7 +362,7 @@ exit(void)
     }
   }
 
-  // Jump into the scheduler, never to return.
+  // Jump into the scheduler, never to return
   curproc->state = ZOMBIE;
   sched();
   panic("zombie exit");
@@ -399,37 +424,79 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *highest_priority_proc;
+  float highest_priority;
   struct cpu *c = mycpu();
   c->proc = 0;
   
   for(;;){
-    // Enable interrupts on this processor.
+    // Enable interrupts on this processor
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    
+    highest_priority_proc = 0;
+    highest_priority = -1;
+    
+    // Find highest priority process to run
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->suspended)
-        continue;
+      continue;
+
       if(p->state != RUNNABLE)
         continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+        
+      // Skip processes with start_later flag still set
+      if(p->start_later && p->start_ticks == 0)
+        continue;
+        
+      // Update waiting time for priority calculation
+      p->wait_ticks = ticks - p->create_ticks - p->total_run_ticks;
+        
+      // Calculate dynamic priority using the formula
+      p->priority = p->initial_priority - ALPHA * p->total_run_ticks + BETA * p->wait_ticks;
+        
+      // Select highest priority or lowest PID in case of tie
+      if(highest_priority_proc == 0 || p->priority > highest_priority || 
+        (p->priority == highest_priority && p->pid < highest_priority_proc->pid)){
+        highest_priority_proc = p;
+        highest_priority = p->priority;
+      }
     }
+    
+    // No runnable processes found
+    if(highest_priority_proc == 0){
+      release(&ptable.lock);
+      continue;
+    }
+    
+    // Schedule the chosen process
+    p = highest_priority_proc;
+    c->proc = p;
+    switchuvm(p);
+    p->state = RUNNING;
+    
+    // Set start_ticks if first time running
+    if(p->start_ticks == 0)
+      p->start_ticks = ticks;
+      
+    p->context_switches++;
+    
+    swtch(&(c->scheduler), p->context);
+    switchkvm();
+    
+    // Process is done running for now
+    c->proc = 0;
+    
+    // Update total run time
+    p->total_run_ticks++;
+    
+    // Check if exec_time has been reached
+    if(p->exec_time > 0 && p->total_run_ticks >= p->exec_time){
+      p->killed = 1;
+    }
+    
     release(&ptable.lock);
-
   }
 }
 
@@ -609,4 +676,85 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+//scheduling
+int
+custom_fork(int start_later, int exec_time)
+{
+  int i, pid;
+  struct proc *np;
+  struct proc *curproc = myproc();
+
+  // Allocate process
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // Copy process state from proc
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+    kfree(np->kstack);
+    np->kstack = 0;
+    np->state = UNUSED;
+    return -1;
+  }
+  np->sz = curproc->sz;
+  np->parent = curproc;
+  *np->tf = *curproc->tf;
+
+  // Set custom fork parameters
+  np->start_later = start_later;
+  np->exec_time = exec_time;
+  np->create_ticks = ticks;
+  np->start_ticks = 0;
+  np->total_run_ticks = 0;
+  np->wait_ticks = 0;
+  np->context_switches = 0;
+  np->initial_priority = INITIAL_PRIORITY;
+  np->priority = INITIAL_PRIORITY;
+
+  // Clear %eax so that fork returns 0 in the child
+  np->tf->eax = 0;
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  pid = np->pid;
+
+  acquire(&ptable.lock);
+
+  // Set state based on start_later flag
+  if (start_later) {
+    np->state = EMBRYO;  // Will be set to RUNNABLE by scheduler_start
+  } else {
+    np->state = RUNNABLE;
+    np->start_ticks = ticks;
+  }
+
+  release(&ptable.lock);
+
+  return pid;
+}
+
+int
+scheduler_start(void)
+{
+  struct proc *p;
+  int count = 0;
+  
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == EMBRYO && p->start_later){
+      p->state = RUNNABLE;
+      p->start_ticks = ticks;
+      count++;
+    }
+  }
+  release(&ptable.lock);
+  
+  return count;  // Return number of processes started
 }

@@ -34,6 +34,8 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 typedef void (*sighandler_t)(void);
+int custom_fork(int start_later, int exec_time);
+int scheduler_start(void);
 
 // Per-process state
 struct proc {
@@ -54,7 +56,17 @@ struct proc {
   sighandler_t sig_handler;       // Custom signal handler function pointer
   int custom_signal_pending;      // Flag to indicate a pending custom signal
 
-  
+  // scheduling
+  int start_later;         // Flag to indicate if process should start later
+  int exec_time;          // Execution time in ticks (-1 for indefinite)
+  uint create_ticks;       // When process was created
+  uint start_ticks;        // When process first got CPU
+  uint total_run_ticks;    // Total ticks process has run
+  uint wait_ticks;         // Total ticks process has waited
+  int context_switches;   // Number of context switches
+  int initial_priority;   // Initial priority
+  float priority;         // Dynamic priority
+
 
 };
 

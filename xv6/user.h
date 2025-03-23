@@ -40,3 +40,7 @@ int atoi(const char*);
 
 typedef void (*sighandler_t)(void);
 int signal(sighandler_t);
+
+//scheduling
+int custom_fork(int start_later, int exec_time);
+int scheduler_start(void);
