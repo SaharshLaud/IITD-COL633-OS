@@ -102,23 +102,22 @@ trap(struct trapframe *tf)
     return;
   }
 
-  // Add near the end of the trap function before the final "if killed" check
-if(myproc() && myproc()->custom_signal_pending && myproc()->sig_handler && (tf->cs&3) == DPL_USER) {
-  // Setup trap frame to call the signal handler when returning to user space
-  uint eip = tf->eip;  // Save current instruction pointer
-  
-  // Allocate space on user stack for return address
-  tf->esp -= 4;
-  
-  // Store return address on user stack
-  *((uint*)(tf->esp)) = eip;
-  
-  // Set EIP to signal handler address
-  tf->eip = (uint)myproc()->sig_handler;
-  
-  // Clear the pending flag
-  myproc()->custom_signal_pending = 0;
-}
+  if(myproc() && myproc()->custom_signal_pending && myproc()->sig_handler && (tf->cs&3) == DPL_USER) {
+    // Setup trap frame to call the signal handler when returning to user space
+    uint eip = tf->eip;  // Save current instruction pointer
+    
+    // Allocate space on user stack for return address
+    tf->esp -= 4;
+    
+    // Store return address on user stack
+    *((uint*)(tf->esp)) = eip;
+    
+    // Set EIP to signal handler address
+    tf->eip = (uint)myproc()->sig_handler;
+    
+    // Clear the pending flag
+    myproc()->custom_signal_pending = 0;
+  }
 
 
   // Force process exit if it has been killed and is in user space.
