@@ -19,6 +19,55 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+// Send SIGINT to all processes with pid > 2
+void send_sigint(void) {
+  struct proc *p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != UNUSED && p->pid > 2){
+          p->killed = 1; // Mark process as killed
+          if(p->state == SLEEPING)
+              p->state = RUNNABLE; // Wake up if sleeping
+      }
+  }
+  release(&ptable.lock);
+}
+// Send SIGBG to processes with pid > 2
+void send_sigbg(void) {
+  struct proc *p;
+  acquire(&ptable.lock);
+
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+      if (p->pid == 2) {  // Ensure the shell stays active
+          p->suspended = 0;
+          p->state = RUNNABLE;
+      } else if (p->pid > 2) {
+          // If process is a child of the shell (PID 2), reparent it to init (PID 1)
+          if (p->parent && p->parent->pid == 2) {
+              p->parent = ptable.proc;  // Assign to init (PID 1)
+          }
+          p->suspended = 1;
+      }
+  }
+
+  wakeup1(ptable.proc + 1); // Wake up shell process (PID 2)
+  release(&ptable.lock);
+}
+
+// Send SIGFG to previously suspended processes
+void send_sigfg(void) {
+  struct proc *p;
+  
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->suspended){
+          p->suspended = 0;
+          if(p->state != RUNNING)
+              p->state = RUNNABLE;
+      }
+  }
+  release(&ptable.lock);
+}
 
 void
 pinit(void)
@@ -88,6 +137,8 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->suspended = 0;  // Initialize suspended field
+
 
   release(&ptable.lock);
 
@@ -199,6 +250,8 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->suspended = 0;  // Initialize suspended field
+
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -333,6 +386,8 @@ scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->suspended)
+        continue;
       if(p->state != RUNNABLE)
         continue;
 
@@ -460,7 +515,7 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan && !p->suspended)
       p->state = RUNNABLE;
 }
 

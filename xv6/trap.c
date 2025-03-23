@@ -68,6 +68,9 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
   case T_IRQ0 + IRQ_COM1:
+    if(myproc() && myproc()->suspended && myproc()->state == SLEEPING) {
+      myproc()->state = RUNNABLE;
+    }
     uartintr();
     lapiceoi();
     break;
@@ -92,6 +95,11 @@ trap(struct trapframe *tf)
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
     myproc()->killed = 1;
+  }
+
+  if(myproc() && myproc()->suspended && myproc()->pid > 2 && (tf->cs&3) == DPL_USER) {
+    yield();
+    return;
   }
 
   // Force process exit if it has been killed and is in user space.

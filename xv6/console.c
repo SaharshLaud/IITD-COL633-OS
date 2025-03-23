@@ -192,6 +192,10 @@ void
 consoleintr(int (*getc)(void))
 {
   int c, doprocdump = 0;
+  int ctrl_c_pressed = 0;
+  int ctrl_b_pressed = 0;
+  int ctrl_f_pressed = 0;
+
 
   acquire(&cons.lock);
   while((c = getc()) >= 0){
@@ -213,6 +217,22 @@ consoleintr(int (*getc)(void))
         consputc(BACKSPACE);
       }
       break;
+
+    case C('C'): // Detect Ctrl+C
+      ctrl_c_pressed = 1;
+      send_sigint();
+      break;
+
+    case C('B'):  // Detect Ctrl+B
+      ctrl_b_pressed = 1;
+      send_sigbg();
+      break;
+      
+    case C('F'):  // Detect Ctrl+F
+        ctrl_f_pressed = 1;
+        send_sigfg();
+        break;
+      
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
@@ -229,6 +249,18 @@ consoleintr(int (*getc)(void))
   release(&cons.lock);
   if(doprocdump) {
     procdump();  // now call procdump() wo. cons.lock held
+  }
+
+  if(ctrl_c_pressed) { // Now safely print after releasing lock
+    cprintf("Ctrl-C is detected by xv6\n");
+  }
+  
+  if(ctrl_b_pressed) {
+    cprintf("Ctrl-B is detected by xv6\n");
+  }
+
+  if(ctrl_f_pressed) {
+      cprintf("Ctrl-F is detected by xv6\n");
   }
 }
 
