@@ -55,6 +55,8 @@ struct proc {
   int suspended;             // Flag to indicate if process is suspended (for SIGBG)
   sighandler_t sig_handler;       // Custom signal handler function pointer
   int custom_signal_pending;      // Flag to indicate a pending custom signal
+  int in_signal_handler;          // Flag to indicate if currently handling a signal
+
 
   // scheduling
   int start_later;         // Flag to indicate if process should start later

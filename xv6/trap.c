@@ -103,14 +103,17 @@ trap(struct trapframe *tf)
   }
 
   if(myproc() && myproc()->custom_signal_pending && myproc()->sig_handler && (tf->cs&3) == DPL_USER) {
-    // Setup trap frame to call the signal handler when returning to user space
-    uint eip = tf->eip;  // Save current instruction pointer
+    // for debugging
+    // cprintf("Signal pending for process %d\n", myproc()->pid);
+    
+    // Save current instruction pointer
+    uint old_eip = tf->eip;
     
     // Allocate space on user stack for return address
     tf->esp -= 4;
     
-    // Store return address on user stack
-    *((uint*)(tf->esp)) = eip;
+    // Store return address directly on stack
+    *((uint*)(tf->esp)) = old_eip;
     
     // Set EIP to signal handler address
     tf->eip = (uint)myproc()->sig_handler;

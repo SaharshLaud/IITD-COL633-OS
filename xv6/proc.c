@@ -76,15 +76,15 @@ void send_sigcustom(void) {
   struct proc *p;
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != UNUSED && p->pid > 2){
-          // If the process has registered a handler, mark the signal as pending
-          if(p->sig_handler != 0) {
-              p->custom_signal_pending = 1;
-              if(p->state == SLEEPING)
-                  p->state = RUNNABLE;
-          }
-          // If no handler is registered, ignore the signal
+    if(p->state != UNUSED && p->pid > 2){
+      // If the process has registered a handler, mark the signal as pending
+      // But only if it's not already handling a signal
+      if(p->sig_handler != 0 && !p->in_signal_handler) {
+        p->custom_signal_pending = 1;
+        if(p->state == SLEEPING)
+          p->state = RUNNABLE;
       }
+    }
   }
   release(&ptable.lock);
 }
@@ -163,6 +163,8 @@ found:
   p->suspended = 0;  // Initialize suspended field
   p->sig_handler = 0;
   p->custom_signal_pending = 0;
+  p->in_signal_handler = 0;
+
   //scheduling
   p->start_later = 0;
   p->exec_time = -1;
@@ -488,12 +490,14 @@ scheduler(void)
     // Process is done running for now
     c->proc = 0;
     
-    // Update total run time
-    p->total_run_ticks++;
-    
-    // Check if exec_time has been reached
-    if(p->exec_time > 0 && p->total_run_ticks >= p->exec_time){
-      p->killed = 1;
+    // Only increment run time if process is still active and not sleeping
+    if(p->state != ZOMBIE && p->state != SLEEPING) {
+      p->total_run_ticks++;
+      
+      // Check if exec_time has been reached
+      if(p->exec_time > 0 && p->total_run_ticks >= p->exec_time){
+          p->killed = 1;
+      }
     }
     
     release(&ptable.lock);
