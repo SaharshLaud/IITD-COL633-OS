@@ -344,11 +344,15 @@ exit(void)
   uint wt = tat - curproc->total_run_ticks;  // Waiting time
   uint rt = curproc->start_ticks - curproc->create_ticks;  // Response time
 
+  // ADD THIS LOCK to ensure atomic printing
+  acquire(&tickslock);
   cprintf("PID: %d\n", curproc->pid);
   cprintf("TAT: %d\n", tat);
   cprintf("WT: %d\n", wt);
   cprintf("RT: %d\n", rt);
   cprintf("#CS: %d\n", curproc->context_switches);
+  release(&tickslock);
+  // END OF ADDED LOCK
 
   acquire(&ptable.lock);
 
@@ -369,6 +373,7 @@ exit(void)
   sched();
   panic("zombie exit");
 }
+
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
