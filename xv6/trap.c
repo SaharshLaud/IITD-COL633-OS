@@ -102,25 +102,6 @@ trap(struct trapframe *tf)
     return;
   }
 
-  if(myproc() && myproc()->custom_signal_pending && myproc()->sig_handler && (tf->cs&3) == DPL_USER) {
-    // Set the in_signal_handler flag
-    myproc()->in_signal_handler = 1;
-    
-    // Save current instruction pointer
-    uint old_eip = tf->eip;
-    // Allocate space on user stack for return address
-    tf->esp -= 4;
-    // Store return address directly on stack
-    *((uint*)(tf->esp)) = old_eip;
-    // Set EIP to signal handler address
-    tf->eip = (uint)myproc()->sig_handler;
-    // Clear the pending flag
-    myproc()->custom_signal_pending = 0;
-  }
-  
-
-
-
   // Force process exit if it has been killed and is in user space.
   // (If it is still executing in the kernel, let it keep running
   // until it gets to the regular system call return.)
@@ -138,10 +119,10 @@ trap(struct trapframe *tf)
     exit();
 
   // Check if we're returning from the signal handler
-  if(myproc() && myproc()->in_signal_handler && (tf->cs&3) == DPL_USER && 
-  tf->eip == *((uint*)(tf->esp))) {
-  // We've returned to the original EIP saved on the stack
-  myproc()->in_signal_handler = 0;
+  if(myproc() && myproc()->in_signal_handler && (tf->cs&3) == DPL_USER) {
+    // Reset the in_signal_handler flag after executing the handler
+    // This is a simpler approach that will work for your case
+    myproc()->in_signal_handler = 0;
   }
 
 }

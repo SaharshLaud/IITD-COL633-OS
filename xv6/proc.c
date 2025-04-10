@@ -77,8 +77,7 @@ void send_sigcustom(void) {
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state != UNUSED && p->pid > 2){
-      // If the process has registered a handler, mark the signal as pending
-      // But only if it's not already handling a signal
+      // Only set pending if there's a handler and not already in a handler
       if(p->sig_handler != 0 && !p->in_signal_handler) {
         p->custom_signal_pending = 1;
         if(p->state == SLEEPING)
@@ -88,6 +87,7 @@ void send_sigcustom(void) {
   }
   release(&ptable.lock);
 }
+
 
 
 

@@ -139,10 +139,27 @@ syscall(void)
 {
   int num;
   struct proc *curproc = myproc();
-
+  
   num = curproc->tf->eax;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     curproc->tf->eax = syscalls[num]();
+    
+    // Check for pending custom signals after system call completes
+    if(curproc->custom_signal_pending && curproc->sig_handler && 
+       !curproc->in_signal_handler && (curproc->tf->cs&3) == DPL_USER) {
+      // Set the in_signal_handler flag
+      curproc->in_signal_handler = 1;
+      // Save current instruction pointer
+      uint old_eip = curproc->tf->eip;
+      // Allocate space on user stack for return address
+      curproc->tf->esp -= 4;
+      // Store return address directly on stack
+      *((uint*)(curproc->tf->esp)) = old_eip;
+      // Set EIP to signal handler address
+      curproc->tf->eip = (uint)curproc->sig_handler;
+      // Clear the pending flag
+      curproc->custom_signal_pending = 0;
+    }
   } else {
     cprintf("%d %s: unknown sys call %d\n",
             curproc->pid, curproc->name, num);
