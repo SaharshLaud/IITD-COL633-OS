@@ -192,6 +192,8 @@ void
 consoleintr(int (*getc)(void))
 {
   int c, doprocdump = 0;
+  int dopageinfo = 0;  // flag for page info
+
 
   acquire(&cons.lock);
   while((c = getc()) >= 0){
@@ -213,6 +215,11 @@ consoleintr(int (*getc)(void))
         consputc(BACKSPACE);
       }
       break;
+
+    case C('I'):  // case for Ctrl+I
+      dopageinfo = 1;
+      break;
+
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
@@ -229,6 +236,9 @@ consoleintr(int (*getc)(void))
   release(&cons.lock);
   if(doprocdump) {
     procdump();  // now call procdump() wo. cons.lock held
+  }
+  if(dopageinfo) {
+    pageinfoprint();  // Call function to print page info
   }
 }
 

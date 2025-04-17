@@ -20,6 +20,30 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+// print page information
+void pageinfoprint(void)
+{
+  struct proc *p;
+  
+  cprintf("Ctrl+I is detected by xv6\n");
+  cprintf("PID NUM_PAGES\n");
+  
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == SLEEPING || p->state == RUNNING || p->state == RUNNABLE){
+      if(p->pid >= 1){
+        // Calculate number of pages
+        uint num_pages = p->sz / PGSIZE;
+        if(p->sz % PGSIZE != 0)
+          num_pages++; // Account for partial pages
+          
+        cprintf("%d %d\n", p->pid, num_pages);
+      }
+    }
+  }
+  release(&ptable.lock);
+}
+
 void
 pinit(void)
 {
