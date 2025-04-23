@@ -13,6 +13,7 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
+extern int swappage_in(uint addr);
 
 void
 tvinit(void)
@@ -86,12 +87,36 @@ trap(struct trapframe *tf)
               tf->trapno, cpuid(), tf->eip, rcr2());
       panic("trap");
     }
+    
+    // Handle page fault
+    if(tf->trapno == T_PGFLT) {
+      uint addr = rcr2();  // Get the faulting address from CR2 register
+     //cprintf("Page fault at address 0x%x (err: %d)\n", addr, tf->err);
+      
+      // Special handling for low addresses (potential null pointer dereference)
+      if(addr < PGSIZE) {
+        //  cprintf("Warning: Possible null pointer dereference at address 0x%x\n", addr);
+          // Continue with swapping attempt anyway
+      }
+      
+      if(swappage_in(addr) == 0) {
+          // Successfully swapped in the page
+          return;
+      } else {
+          //cprintf("Failed to swap in page at address 0x%x\n", addr);
+      }
+      // If swapping failed, continue with the default handling
+    }
+  
+    
+    
     // In user space, assume process misbehaved.
     cprintf("pid %d %s: trap %d err %d on cpu %d "
             "eip 0x%x addr 0x%x--kill proc\n",
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
     myproc()->killed = 1;
+
   }
 
   // Force process exit if it has been killed and is in user space.

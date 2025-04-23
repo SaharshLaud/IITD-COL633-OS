@@ -16,6 +16,8 @@
 #endif
 
 #define NINODES 200
+#define NSWAPBLOCKS (800*8)  // 800 swap slots, each 8 blocks
+
 
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
@@ -91,19 +93,19 @@ main(int argc, char *argv[])
   }
 
   // 1 fs block = 1 disk sector
-  nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  nmeta = 2 + NSWAPBLOCKS + nlog + ninodeblocks + nbitmap;
   nblocks = FSSIZE - nmeta;
 
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);
   sb.nlog = xint(nlog);
-  sb.logstart = xint(2);
-  sb.inodestart = xint(2+nlog);
+  sb.logstart = xint(2+NSWAPBLOCKS);
+  sb.inodestart = xint(2+NSWAPBLOCKS+nlog);
   sb.bmapstart = xint(2+nlog+ninodeblocks);
 
-  printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
-         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
+  printf("nmeta %d (boot, super, swap blocks %u, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
+    nmeta, NSWAPBLOCKS, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
   freeblock = nmeta;     // the first free block that we can allocate
 
@@ -239,16 +241,31 @@ balloc(int used)
 {
   uchar buf[BSIZE];
   int i;
-
+  
   printf("balloc: first %d blocks have been allocated\n", used);
-  assert(used < BSIZE*8);
+  
+  // Instead of asserting, handle multiple bitmap blocks
+  // assert(used < BSIZE*8);
+  
   bzero(buf, BSIZE);
-  for(i = 0; i < used; i++){
+  for(i = 0; i < used && i < BSIZE*8; i++){
     buf[i/8] = buf[i/8] | (0x1 << (i%8));
   }
+  
   printf("balloc: write bitmap block at sector %d\n", sb.bmapstart);
   wsect(sb.bmapstart, buf);
+  
+  // Write additional bitmap blocks if needed
+  for(int j = 1; i < used; j++) {
+    bzero(buf, BSIZE);
+    for(; i < used && i < (j+1)*BSIZE*8; i++){
+      int bit_offset = i - j*BSIZE*8;
+      buf[bit_offset/8] = buf[bit_offset/8] | (0x1 << (bit_offset%8));
+    }
+    wsect(sb.bmapstart + j, buf);
+  }
 }
+
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 

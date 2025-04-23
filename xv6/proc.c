@@ -19,30 +19,26 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+extern void swap_cleanup(struct proc*);
+
 
 // print page information
 void pageinfoprint(void)
 {
   struct proc *p;
-  
   cprintf("Ctrl+I is detected by xv6\n");
   cprintf("PID NUM_PAGES\n");
-  
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == SLEEPING || p->state == RUNNING || p->state == RUNNABLE){
       if(p->pid >= 1){
-        // Calculate number of pages
-        uint num_pages = p->sz / PGSIZE;
-        if(p->sz % PGSIZE != 0)
-          num_pages++; // Account for partial pages
-          
-        cprintf("%d %d\n", p->pid, num_pages);
+        cprintf("%d %d\n", p->pid, p->rss);
       }
     }
   }
   release(&ptable.lock);
 }
+
 
 void
 pinit(void)
@@ -112,6 +108,8 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->rss = 0;  // Initialize resident set size to 0
+
 
   release(&ptable.lock);
 
@@ -154,6 +152,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
+  p->rss = 1;  // Initial process has one page
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -184,19 +183,25 @@ growproc(int n)
 {
   uint sz;
   struct proc *curproc = myproc();
-
   sz = curproc->sz;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
+    curproc->rss += n / PGSIZE;  // Update rss when adding pages
+    if(n % PGSIZE != 0)
+      curproc->rss++;  // Account for partial pages
   } else if(n < 0){
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
+    curproc->rss -= (-n) / PGSIZE;  // Update rss when removing pages
+    if((-n) % PGSIZE != 0)
+      curproc->rss--;  // Account for partial pages
   }
   curproc->sz = sz;
   switchuvm(curproc);
   return 0;
 }
+
 
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
@@ -222,6 +227,8 @@ fork(void)
   }
   np->sz = curproc->sz;
   np->parent = curproc;
+  np->rss = curproc->rss;  // Copy resident set size from parent
+
   *np->tf = *curproc->tf;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -284,6 +291,7 @@ exit(void)
         wakeup1(initproc);
     }
   }
+  swap_cleanup(curproc);  // Clean up any swap slots used by this process
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;

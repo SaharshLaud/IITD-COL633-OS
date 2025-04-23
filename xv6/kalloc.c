@@ -83,14 +83,53 @@ char*
 kalloc(void)
 {
   struct run *r;
-
+  
   if(kmem.use_lock)
     acquire(&kmem.lock);
+  
+  // Check if we need to swap before allocating
+  if(kmem.freelist == 0) {
+    extern void check_and_swap(void);
+    if(kmem.use_lock)
+      release(&kmem.lock);
+    check_and_swap();
+    // Try again with more aggressive swapping if needed
+    if(kmem.freelist == 0)
+      check_and_swap();
+    if(kmem.use_lock)
+      acquire(&kmem.lock);
+  }
+  
   r = kmem.freelist;
   if(r)
     kmem.freelist = r->next;
+  
   if(kmem.use_lock)
     release(&kmem.lock);
+  
+  if(r)
+    memset((char*)r, 5, PGSIZE); // fill with junk
+  
   return (char*)r;
 }
 
+
+
+int
+kfreepagecnt(void)
+{
+  struct run *r;
+  int count = 0;
+  
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(r) {
+    count++;
+    r = r->next;
+  }
+  if(kmem.use_lock)
+    release(&kmem.lock);
+  
+  return count;
+}

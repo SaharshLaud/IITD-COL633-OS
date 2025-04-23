@@ -52,6 +52,9 @@ struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
+void            swap_read(uint, void*);
+void            swap_write(uint, void*);
+
 
 // ide.c
 void            ideinit(void);
@@ -190,3 +193,26 @@ void            clearpteu(pde_t *pgdir, char *uva);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+typedef uint pte_t;
+typedef uint pde_t;
+
+// pageswap.c
+void            swap_init(void);
+int             swappage_in(uint);
+void            check_and_swap(void);
+void            swap_cleanup(struct proc*);
+int             count_free_pages(void);
+int             find_free_slot(void);
+void            free_slot(int);
+int             swappage_out(pde_t*, uint, uint);
+struct proc*    find_victim_proc(void);
+uint            find_victim_page(pde_t*, uint*);
+void            swap_out_pages(void);
+
+// vm.c
+pte_t*          walkpgdir(pde_t*, const void*, int);
+int             mappages(pde_t*, void*, uint, uint, int);
+
+// kalloc.c
+int             kfreepagecnt(void);

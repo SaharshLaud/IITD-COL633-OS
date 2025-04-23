@@ -668,3 +668,31 @@ nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
 }
+
+
+// Direct read from swap blocks (bypassing the log)
+void
+swap_read(uint blockno, void *buf)
+{
+  struct buf *b;
+  
+  b = bread(0, blockno);
+  memmove(buf, b->data, BSIZE);
+  brelse(b);
+}
+
+// Direct write to swap blocks (bypassing the log)
+void
+swap_write(uint blockno, void *buf)
+{
+  struct buf *b;
+  
+  b = bread(0, blockno);
+  memmove(b->data, buf, BSIZE);
+  
+  // Write directly to disk, bypassing the log
+  b->flags |= B_DIRTY;
+  bwrite(b);
+  
+  brelse(b);
+}
