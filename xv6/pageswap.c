@@ -376,23 +376,18 @@ check_and_swap(void)
   int free_pages = count_free_pages();
   
   if(free_pages <= threshold) {
-    //cprintf("Current Threshold = %d, Swapping %d pages (Free pages: %d)\n",threshold, npages_to_swap, free_pages);
-    cprintf("Current Threshold = %d, Swapping %d pages\n",threshold, npages_to_swap);
-
+    cprintf("Current Threshold = %d, Swapping %d pages\n", 
+            threshold, npages_to_swap);
     
     // Swap out npages_to_swap pages
     swap_out_pages();
     
-    // Update threshold and npages_to_swap
-    threshold = (threshold * (100 - beta)) / 100;
+    threshold -= (threshold * beta) / 100;
     if(threshold < 1) threshold = 1;  // Ensure threshold doesn't go below 1
     
-    npages_to_swap = ((npages_to_swap * (100 + alpha)) / 100);
+    npages_to_swap += (npages_to_swap * alpha) / 100;
     if(npages_to_swap > limit)
       npages_to_swap = limit;
-    
-    // Print free pages after swapping
-   // cprintf("After swapping, free pages: %d\n", count_free_pages());
   }
 }
 
