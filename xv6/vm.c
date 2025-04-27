@@ -337,19 +337,76 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
+
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
-    pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
-      goto bad;
+    
+    if(*pte & PTE_P){
+      // Page is present in memory - copy it normally
+      pa = PTE_ADDR(*pte);
+      flags = PTE_FLAGS(*pte);
+      if((mem = kalloc()) == 0) {
+        // Out of memory - try to free up some space by swapping
+        check_and_swap();
+        mem = kalloc(); // Try again
+        if(mem == 0) {
+          // Try one more aggressive swap
+          check_and_swap();
+          mem = kalloc();
+          if(mem == 0) {
+            goto bad;
+          }
+        }
+      }
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+        kfree(mem);
+        goto bad;
+      }
+    } else if(*pte != 0) {
+      // Page is swapped out - duplicate the swap slot
+      uint slot_idx = PTE_ADDR(*pte) >> 12;  // Extract swap slot index from PTE
+      flags = PTE_FLAGS(*pte);
+      
+      // Allocate a new swap slot for the child
+      int new_slot = duplicate_swap_slot(slot_idx);
+      if(new_slot < 0) {
+        // If duplication fails, try to swap in the page and then copy it normally
+        if(swappage_in(pgdir, (void*)i) == 0) {
+          // Page is now in memory, get its physical address
+          pte = walkpgdir(pgdir, (void*)i, 0);
+          if(!pte || !(*pte & PTE_P))
+            goto bad;
+            
+          pa = PTE_ADDR(*pte);
+          flags = PTE_FLAGS(*pte);
+          
+          // Allocate memory for the copy
+          if((mem = kalloc()) == 0)
+            goto bad;
+            
+          memmove(mem, (char*)P2V(pa), PGSIZE);
+          if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+            kfree(mem);
+            goto bad;
+          }
+        } else {
+          // If swapping in fails, we can't copy this page
+          goto bad;
+        }
+      } else {
+        // Update the child's page table entry to point to the new swap slot
+        // Keep the same flags but ensure PTE_P is cleared
+        pte_t entry = (new_slot << 12) | (flags & ~PTE_P);
+        
+        // Map the page in the child's page table
+        pte_t *child_pte = walkpgdir(d, (void*)i, 1);
+        if(child_pte == 0)
+          goto bad;
+        
+        *child_pte = entry;
+      }
     }
   }
   return d;
@@ -359,20 +416,27 @@ bad:
   return 0;
 }
 
+
+
 //PAGEBREAK!
 // Map user virtual address to kernel address.
 char*
 uva2ka(pde_t *pgdir, char *uva)
 {
   pte_t *pte;
-
   pte = walkpgdir(pgdir, uva, 0);
-  if((*pte & PTE_P) == 0)
+  if(pte == 0)
     return 0;
+    
+  if((*pte & PTE_P) == 0)
+    return 0;  // Page is swapped out
+    
   if((*pte & PTE_U) == 0)
     return 0;
+    
   return (char*)P2V(PTE_ADDR(*pte));
 }
+
 
 // Copy len bytes from p to user address va in page table pgdir.
 // Most useful when pgdir is not the current page table.
@@ -387,8 +451,24 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   while(len > 0){
     va0 = (uint)PGROUNDDOWN(va);
     pa0 = uva2ka(pgdir, (char*)va0);
-    if(pa0 == 0)
-      return -1;
+    
+    if(pa0 == 0) {
+      // Page might be swapped out - try to swap it in
+      pte_t *pte = walkpgdir(pgdir, (char*)va0, 0);
+      if(pte && !(*pte & PTE_P)) {
+        // Page is swapped out, swap it in
+        if(swappage_in(pgdir, (char*)va0) < 0)
+          return -1;
+        
+        // Try again after swapping in
+        pa0 = uva2ka(pgdir, (char*)va0);
+        if(pa0 == 0)
+          return -1;
+      } else {
+        return -1;
+      }
+    }
+    
     n = PGSIZE - (va - va0);
     if(n > len)
       n = len;
@@ -399,6 +479,7 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   }
   return 0;
 }
+
 
 //PAGEBREAK!
 // Blank page.

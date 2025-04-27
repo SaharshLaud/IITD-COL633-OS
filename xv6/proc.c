@@ -225,10 +225,15 @@ fork(void)
     np->state = UNUSED;
     return -1;
   }
+
   np->sz = curproc->sz;
   np->parent = curproc;
-  np->rss = curproc->rss;  // Copy resident set size from parent
-
+  
+  // Copy resident set size from parent
+  // This is correct because copyuvm() creates exact copies of pages
+  // including handling swapped-out pages
+  np->rss = curproc->rss;
+  
   *np->tf = *curproc->tf;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -244,13 +249,12 @@ fork(void)
   pid = np->pid;
 
   acquire(&ptable.lock);
-
   np->state = RUNNABLE;
-
   release(&ptable.lock);
 
   return pid;
 }
+
 
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state

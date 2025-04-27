@@ -41,6 +41,60 @@ int beta = 10;              // Default beta value
 #endif
 int limit = 100;            // Maximum number of pages to swap
 
+
+// Function to duplicate a swap slot for fork
+int
+duplicate_swap_slot(int parent_slot)
+{
+  if(parent_slot < 0 || parent_slot >= 800 || swap_area.slots[parent_slot].is_free) {
+    return -1; // Invalid slot or slot is free
+  }
+  
+  // Find a new free slot for the child
+  int child_slot = find_free_slot();
+  
+  // If no free slot is available, try to swap out more pages to free up slots
+  if(child_slot < 0) {
+    // Try to free up some memory by swapping
+    check_and_swap();
+    
+    // Try again
+    child_slot = find_free_slot();
+    
+    // If still no free slot, try one more aggressive swap
+    if(child_slot < 0) {
+      check_and_swap();
+      child_slot = find_free_slot();
+      
+      if(child_slot < 0) {
+        return -1; // Still no free slots available
+      }
+    }
+  }
+  
+  // Copy the page permissions
+  acquire(&swap_area.lock);
+  swap_area.slots[child_slot].page_perm = swap_area.slots[parent_slot].page_perm;
+  release(&swap_area.lock);
+  
+  // Calculate block numbers for parent and child slots
+  uint parent_blockno = 2 + parent_slot * 8; // 2 blocks for boot and superblock
+  uint child_blockno = 2 + child_slot * 8;
+  
+  // Copy the page data from parent's slot to child's slot
+  for(int i = 0; i < 8; i++) {
+    struct buf *src_buf = bread(0, parent_blockno + i);
+    struct buf *dst_buf = bread(0, child_blockno + i);
+    memmove(dst_buf->data, src_buf->data, BSIZE);
+    bwrite(dst_buf);
+    brelse(src_buf);
+    brelse(dst_buf);
+  }
+  
+  return child_slot;
+}
+
+
 // Initialize swap area
 void
 swap_init(void)
@@ -158,87 +212,74 @@ swappage_out(pde_t *pgdir, uint va, uint pa)
 
 
 // Function to swap a page in from disk
-int 
-swappage_in(uint va) 
+int
+swappage_in(pde_t *pgdir, void *va)
 {
-    struct proc *p = myproc();
-    if(!p)
-        return -1;
-    
-    // Round down to page boundary
-    uint page_addr = PGROUNDDOWN(va);
-    
-    pde_t *pgdir = p->pgdir;
-    pte_t *pte = walkpgdir(pgdir, (void*)page_addr, 0);
-    
-    if(!pte) {
-       // cprintf("No PTE for address 0x%x\n", va);
-        return -1;  // No PTE for this address
-    }
-    
-    if(*pte & PTE_P) {
-       // cprintf("Page already present for address 0x%x\n", va);
-        return -1;  // Page already present
-    }
-    
-    // Extract the slot index from the PTE
-    // Use PTE_ADDR to get the physical address bits (top 20 bits)
-    int slot_index = PTE_ADDR(*pte) >> 12;
-    
-    //cprintf("Extracted slot index %d for address 0x%x\n", slot_index, va);
-    
-    if(slot_index < 0 || slot_index >= 800 || swap_area.slots[slot_index].is_free) {
-       // cprintf("Invalid swap slot: %d (va: 0x%x)\n", slot_index, va);
-        return -1;  // Invalid slot or slot is free
-    }
-    
-    // Allocate a new physical page
-    char *mem = kalloc();
+  // Round down to page boundary
+  uint page_addr = PGROUNDDOWN((uint)va);
+  
+  pte_t *pte = walkpgdir(pgdir, (void*)page_addr, 0);
+  if(!pte) {
+    return -1; // No PTE for this address
+  }
+  
+  if(*pte & PTE_P) {
+    return 0; // Page already present
+  }
+  
+  // Extract the slot index from the PTE
+  int slot_index = PTE_ADDR(*pte) >> 12;
+  
+  if(slot_index < 0 || slot_index >= 800 || swap_area.slots[slot_index].is_free) {
+    return -1; // Invalid slot or slot is free
+  }
+  
+  // Allocate a new physical page
+  char *mem = kalloc();
+  if(!mem) {
+    // Out of memory - try to free up some space by swapping
+    check_and_swap();
+    mem = kalloc(); // Try again
     if(!mem) {
-        // Out of memory - try to free up some space by swapping
-        check_and_swap();
-        mem = kalloc();  // Try again
-        if(!mem) {
-          //  cprintf("Still out of memory after swapping\n");
-            return -1;  // Still out of memory
-        }
+      return -1; // Still out of memory
     }
-    
-    // Calculate the starting block number for this slot
-    uint blockno = 2 + slot_index * 8;  // 2 blocks for boot and superblock
-    
-    // Read the page from disk
-    for(int i = 0; i < 8; i++) {
-        struct buf *b = bread(0, blockno + i);
-        memmove(mem + i*BSIZE, b->data, BSIZE);
-        brelse(b);
-    }
-    
-    // Restore the page permissions
-    uint perm;
-    acquire(&swap_area.lock);
-    perm = swap_area.slots[slot_index].page_perm;
-    release(&swap_area.lock);
-    
-    // Make sure PTE_P is set in the permissions
-    perm |= PTE_P;
-    
-    // Map the physical page to the virtual address
-    if(mappages(pgdir, (void*)page_addr, PGSIZE, V2P(mem), perm) < 0) {
-        kfree(mem);
-       // cprintf("Failed to map page at VA 0x%x\n", page_addr);
-        return -1;
-    }
-    
-    // Free the swap slot
-    free_slot(slot_index);
-    
-    // Increment the rss count
-    p->rss++;
-    
- //   cprintf("Successfully swapped in page at VA 0x%x from slot %d\n", page_addr, slot_index);
-    return 0;
+  }
+  
+  // Calculate the starting block number for this slot
+  uint blockno = 2 + slot_index * 8; // 2 blocks for boot and superblock
+  
+  // Read the page from disk
+  for(int i = 0; i < 8; i++) {
+    struct buf *b = bread(0, blockno + i);
+    memmove(mem + i*BSIZE, b->data, BSIZE);
+    brelse(b);
+  }
+  
+  // Restore the page permissions
+  uint perm;
+  acquire(&swap_area.lock);
+  perm = swap_area.slots[slot_index].page_perm;
+  release(&swap_area.lock);
+  
+  // Make sure PTE_P is set in the permissions
+  perm |= PTE_P;
+  
+  // Map the physical page to the virtual address
+  if(mappages(pgdir, (void*)page_addr, PGSIZE, V2P(mem), perm) < 0) {
+    kfree(mem);
+    return -1;
+  }
+  
+  // Free the swap slot
+  free_slot(slot_index);
+  
+  // Increment the rss count
+  struct proc *p = myproc();
+  if(p) p->rss++;
+  
+  return 0;
 }
+
 
 
 // Function to find a victim process for swapping
@@ -401,15 +442,15 @@ swap_cleanup(struct proc *p)
   
   if(!p || !p->pgdir)
     return;
-    
+  
   for(i = 0; i < KERNBASE; i += PGSIZE) {
     pte = walkpgdir(p->pgdir, (void*)i, 0);
     if(!pte)
       continue;
-      
+    
     if(!(*pte & PTE_P) && (*pte != 0)) {
       // This is a swapped-out page
-      int slot_index = *pte >> 12;
+      int slot_index = PTE_ADDR(*pte) >> 12;
       if(slot_index >= 0 && slot_index < 800) {
         free_slot(slot_index);
       }

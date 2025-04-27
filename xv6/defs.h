@@ -199,7 +199,8 @@ typedef uint pde_t;
 
 // pageswap.c
 void            swap_init(void);
-int             swappage_in(uint);
+int swappage_in(pde_t *pgdir, void *va);
+
 void            check_and_swap(void);
 void            swap_cleanup(struct proc*);
 int             count_free_pages(void);
@@ -209,6 +210,7 @@ int             swappage_out(pde_t*, uint, uint);
 struct proc*    find_victim_proc(void);
 uint            find_victim_page(pde_t*, uint*);
 void            swap_out_pages(void);
+int duplicate_swap_slot(int);
 
 // vm.c
 pte_t*          walkpgdir(pde_t*, const void*, int);

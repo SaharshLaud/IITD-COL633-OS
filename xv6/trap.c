@@ -13,7 +13,7 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
-extern int swappage_in(uint addr);
+extern int swappage_in(pde_t *pgdir, void *va);
 
 void
 tvinit(void)
@@ -90,23 +90,21 @@ trap(struct trapframe *tf)
     
     // Handle page fault
     if(tf->trapno == T_PGFLT) {
-      uint addr = rcr2();  // Get the faulting address from CR2 register
-     //cprintf("Page fault at address 0x%x (err: %d)\n", addr, tf->err);
+      uint addr = rcr2(); // Get the faulting address from CR2 register
       
       // Special handling for low addresses (potential null pointer dereference)
       if(addr < PGSIZE) {
-        //  cprintf("Warning: Possible null pointer dereference at address 0x%x\n", addr);
           // Continue with swapping attempt anyway
       }
       
-      if(swappage_in(addr) == 0) {
+      if(swappage_in(myproc()->pgdir, (void*)addr) == 0) {
           // Successfully swapped in the page
           return;
       } else {
-          //cprintf("Failed to swap in page at address 0x%x\n", addr);
+          // If swapping failed, continue with the default handling
       }
-      // If swapping failed, continue with the default handling
-    }
+   }
+  
   
     
     
